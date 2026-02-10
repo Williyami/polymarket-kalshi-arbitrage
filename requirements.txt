@@ -1,0 +1,10 @@
+# Core dependencies for Arbitrage Advisor
+py-clob-client>=0.12.0
+kalshi-python>=1.0.0
+pandas>=2.0.0
+rich>=13.0.0
+requests>=2.31.0
+
+# Web frontend dependencies
+flask>=3.0.0
+flask-cors>=4.0.0

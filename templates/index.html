@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arbitrage Advisor - Polymarket vs Kalshi</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🎯 Arbitrage Advisor</h1>
+            <p class="subtitle">Polymarket vs. Kalshi · Risk-Neutral Synthetic Arbitrage</p>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="controls">
+                <button id="discoverBtn" class="btn btn-primary">
+                    🔍 Auto-Discover Markets
+                </button>
+                <button id="scanBtn" class="btn btn-success">
+                    📊 Scan for Arbitrage
+                </button>
+                <button id="refreshBtn" class="btn btn-secondary">
+                    🔄 Refresh
+                </button>
+            </div>
+
+            <div class="settings">
+                <label>
+                    Budget: $
+                    <input type="number" id="budgetInput" value="1000" min="100" max="100000" step="100">
+                </label>
+                <label>
+                    <input type="checkbox" id="useDiscovered" checked>
+                    Use Auto-Discovered Markets
+                </label>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <div class="status-item">
+                <span class="label">Status:</span>
+                <span id="scanStatus" class="value">Ready</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Last Update:</span>
+                <span id="lastUpdate" class="value">Never</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Markets:</span>
+                <span id="totalMarkets" class="value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Profitable:</span>
+                <span id="profitableCount" class="value success">0</span>
+            </div>
+        </div>
+
+        <!-- Discovered Markets -->
+        <div class="discovered-section" id="discoveredSection" style="display: none;">
+            <div class="discovered-header">
+                <h2>Discovered Market Pairs</h2>
+                <span class="discovered-count" id="discoveredCount">0 pairs</span>
+            </div>
+            <div class="discovered-grid" id="discoveredGrid"></div>
+        </div>
+
+        <!-- Opportunities Table -->
+        <div class="opportunities-section">
+            <h2>Arbitrage Opportunities</h2>
+            <div class="table-container">
+                <table id="opportunitiesTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Market</th>
+                            <th>Strategy</th>
+                            <th>ROI %</th>
+                            <th>Profit</th>
+                            <th>Capital</th>
+                            <th>Poly Side</th>
+                            <th>Kalshi Side</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="opportunitiesBody">
+                        <tr>
+                            <td colspan="9" class="empty-state">
+                                Click "Auto-Discover Markets" to find market pairs, then "Scan for Arbitrage"
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Modal for Details -->
+        <div id="detailModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <div id="detailContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
