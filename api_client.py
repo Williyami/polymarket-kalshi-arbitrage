@@ -163,12 +163,13 @@ class PolymarketClient:
         """
         order_book = self.get_order_book(token_id)
 
-        if 'error' in order_book or not order_book['asks']:
+        if 'error' in order_book or not order_book.get('asks'):
             return {
                 'best_price': None,
                 'liquidity': 0,
                 'weighted_avg_price': None,
-                'available_size': 0
+                'available_size': 0,
+                'error': order_book.get('error', 'No order book available')
             }
 
         best_price = order_book['asks'][0]['price']
@@ -241,7 +242,7 @@ class KalshiClient:
             depth: Number of price levels to fetch
 
         Returns:
-            Dictionary with bids and asks
+            Dictionary with bids and asks for YES and NO
         """
         try:
             response = self.markets_api.get_market_orderbook(ticker, depth=depth)
@@ -252,17 +253,26 @@ class KalshiClient:
             no_bids = []
             no_asks = []
 
-            if orderbook.yes:
-                for i, level in enumerate(orderbook.yes[:depth]):
-                    price = Decimal(str(level[0])) / Decimal('100')
-                    size = int(level[1])
-                    yes_bids.append({'price': price, 'size': size, 'level': i + 1})
+            # Kalshi returns flat lists [price, quantity] as bids/asks
+            # We need to convert these to proper YES/NO sides
+            # In Kalshi: buying YES = yes_bid, selling YES = yes_ask
+            #           buying NO = no_bid, selling NO = no_ask
 
-            if orderbook.no:
+            # Parse YES side if available
+            if hasattr(orderbook, 'yes') and orderbook.yes:
+                for i, level in enumerate(orderbook.yes[:depth]):
+                    if isinstance(level, (list, tuple)) and len(level) >= 2:
+                        price = Decimal(str(level[0])) / Decimal('100')  # Convert cents to dollars
+                        size = int(level[1])
+                        yes_bids.append({'price': price, 'size': size, 'level': i + 1})
+
+            # Parse NO side if available
+            if hasattr(orderbook, 'no') and orderbook.no:
                 for i, level in enumerate(orderbook.no[:depth]):
-                    price = Decimal(str(level[0])) / Decimal('100')
-                    size = int(level[1])
-                    no_bids.append({'price': price, 'size': size, 'level': i + 1})
+                    if isinstance(level, (list, tuple)) and len(level) >= 2:
+                        price = Decimal(str(level[0])) / Decimal('100')
+                        size = int(level[1])
+                        no_bids.append({'price': price, 'size': size, 'level': i + 1})
 
             return {
                 'ticker': ticker,
@@ -273,6 +283,16 @@ class KalshiClient:
                 'timestamp': time.time()
             }
 
+        except AttributeError as e:
+            logger.warning(f"Kalshi order book structure issue for {ticker}: {e}. Market may not support order books.")
+            return {
+                'ticker': ticker,
+                'yes_bids': [],
+                'yes_asks': [],
+                'no_bids': [],
+                'no_asks': [],
+                'error': f'Market does not support order books: {str(e)}'
+            }
         except Exception as e:
             logger.error(f"Failed to fetch Kalshi order book for {ticker}: {e}")
             return {
@@ -323,7 +343,7 @@ class KalshiClient:
 
     def get_best_no_price_and_liquidity(self, ticker: str, desired_size: int = None) -> Dict:
         """
-        Get best NO price (from asks) and available liquidity
+        Get best NO price (from bids) and available liquidity
 
         Args:
             ticker: Kalshi market ticker
@@ -334,16 +354,18 @@ class KalshiClient:
         """
         order_book = self.get_order_book(ticker)
 
-        if 'error' in order_book or not order_book['no_asks']:
+        if 'error' in order_book or not order_book.get('no_bids'):
             return {
                 'best_price': None,
                 'liquidity': 0,
                 'weighted_avg_price': None,
-                'available_size': 0
+                'available_size': 0,
+                'error': order_book.get('error', 'No order book available')
             }
 
-        best_price = order_book['no_asks'][0]['price']
-        total_liquidity = sum(ask['size'] for ask in order_book['no_asks'])
+        # For buying NO, we look at NO bids (people selling NO to us)
+        best_price = order_book['no_bids'][0]['price']
+        total_liquidity = sum(bid['size'] for bid in order_book['no_bids'])
 
         result = {
             'best_price': float(best_price * Decimal('100')),  # Return in cents for consistency
@@ -352,7 +374,7 @@ class KalshiClient:
 
         if desired_size:
             weighted_avg, available = self.calculate_weighted_average_price(
-                order_book['no_asks'],
+                order_book['no_bids'],
                 desired_size
             )
             result['weighted_avg_price'] = float(weighted_avg * Decimal('100')) if weighted_avg else None

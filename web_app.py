@@ -13,7 +13,7 @@ from typing import Dict, List
 
 from arb_engine_bidirectional import BidirectionalArbitrageCalculator
 from api_client import PolymarketClient, KalshiClient, load_config
-from market_discovery import MarketPairDiscovery
+from market_discovery import FastMarketDiscovery
 
 app = Flask(__name__)
 CORS(app)
@@ -26,6 +26,15 @@ scan_status = {
     'total_markets': 0,
     'profitable_count': 0,
     'error': None
+}
+
+# Progress tracking
+progress_status = {
+    'active': False,
+    'label': '',
+    'current': 0,
+    'total': 0,
+    'percentage': 0
 }
 
 # API clients (initialized on startup)
@@ -59,11 +68,11 @@ def initialize_clients():
     except Exception as e:
         errors.append(f"Kalshi: {e}")
 
-    if poly_client and kalshi_client:
-        try:
-            discovery_engine = MarketPairDiscovery(poly_client, kalshi_client)
-        except Exception as e:
-            errors.append(f"Discovery engine: {e}")
+    # FastMarketDiscovery uses direct REST calls, no client deps
+    try:
+        discovery_engine = FastMarketDiscovery()
+    except Exception as e:
+        errors.append(f"Discovery engine: {e}")
 
     if not errors:
         return True, "All clients initialized successfully"
@@ -82,14 +91,18 @@ def scan_single_pair(pair: Dict, budget: float) -> Dict:
         budget: Budget to use
 
     Returns:
-        Arbitrage opportunity dictionary
+        Arbitrage opportunity dictionary or None if error
     """
     try:
         # Fetch prices from both platforms
         poly_yes = poly_client.get_best_yes_price_and_liquidity(pair['poly_id'])
         kalshi_no = kalshi_client.get_best_no_price_and_liquidity(pair['kalshi_ticker'])
 
-        if not poly_yes['best_price'] or not kalshi_no['best_price']:
+        # Skip if either side has errors or no prices
+        if 'error' in poly_yes or 'error' in kalshi_no:
+            return None
+
+        if not poly_yes.get('best_price') or not kalshi_no.get('best_price'):
             return None
 
         # Calculate NO prices (approximation)
@@ -176,6 +189,12 @@ def get_status():
     return jsonify(scan_status)
 
 
+@app.route('/api/progress')
+def get_progress():
+    """Get current progress status"""
+    return jsonify(progress_status)
+
+
 @app.route('/api/opportunities')
 def get_opportunities():
     """Get current arbitrage opportunities"""
@@ -228,32 +247,57 @@ def start_scan():
 
 @app.route('/api/discover', methods=['POST'])
 def discover_markets():
-    """Discover new market pairs"""
+    """Discover new market pairs - runs in background thread"""
+    global progress_status
+
     data = request.json or {}
-    max_markets = data.get('max_markets', 500)
-    min_similarity = data.get('min_similarity', 0.35)
-    min_liquidity = data.get('min_liquidity', 0)
+    max_markets = data.get('max_markets', 300)
+    min_similarity = data.get('min_similarity', 0.60)
 
-    try:
-        if not discovery_engine:
-            return jsonify({'success': False, 'error': 'Discovery engine not initialized'})
+    if progress_status['active']:
+        return jsonify({'success': False, 'error': 'Another operation is already in progress'})
 
-        # Run discovery
-        pairs = discovery_engine.discover_pairs(
-            max_markets=max_markets,
-            min_similarity=min_similarity,
-            min_liquidity=min_liquidity,
-            save_to_file='discovered_markets.json'
-        )
+    if not discovery_engine:
+        return jsonify({'success': False, 'error': 'Discovery engine not initialized'})
 
-        return jsonify({
-            'success': True,
-            'pairs_found': len(pairs),
-            'pairs': pairs[:10]  # Return top 10
-        })
+    def update_progress(current, total, label):
+        """Update progress callback"""
+        global progress_status
+        progress_status['active'] = True
+        progress_status['current'] = current
+        progress_status['total'] = total
+        progress_status['label'] = label
+        progress_status['percentage'] = int((current / total) * 100) if total > 0 else 0
 
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+    def run_discovery():
+        global progress_status
+        try:
+            progress_status['active'] = True
+            print(f"\nStarting market discovery (max {max_markets} markets, min {min_similarity:.0%} similarity)...")
+
+            # Run discovery with progress callbacks
+            pairs = discovery_engine.discover_pairs(
+                max_markets=max_markets,
+                min_similarity=min_similarity,
+                save_to_file='static/discovered_markets.json',
+                progress_callback=update_progress
+            )
+
+            print(f"✓ Discovery complete: Found {len(pairs)} pairs")
+
+        except Exception as e:
+            print(f"Discovery error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            progress_status['active'] = False
+
+    # Start discovery in background thread
+    thread = threading.Thread(target=run_discovery)
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({'success': True, 'message': 'Discovery started'})
 
 
 @app.route('/api/config', methods=['GET'])

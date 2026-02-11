@@ -6,9 +6,28 @@ class ArbitrageApp {
         this.scanning = false;
         this.autoRefreshInterval = null;
 
+        this.initializeTheme();
         this.initializeElements();
         this.attachEventListeners();
         this.loadInitialData();
+    }
+
+    initializeTheme() {
+        // Load theme from localStorage or default to light
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        // Update button states after DOM loads
+        setTimeout(() => {
+            const themeButtons = document.querySelectorAll('.theme-toggle-btn');
+            themeButtons.forEach(btn => {
+                if (btn.dataset.theme === savedTheme) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }, 0);
     }
 
     initializeElements() {
@@ -17,9 +36,21 @@ class ArbitrageApp {
         this.scanBtn = document.getElementById('scanBtn');
         this.refreshBtn = document.getElementById('refreshBtn');
 
+        // Theme toggle
+        this.themeToggle = document.getElementById('themeToggle');
+
         // Inputs
         this.budgetInput = document.getElementById('budgetInput');
+        this.marketLimitSelect = document.getElementById('marketLimitSelect');
         this.useDiscoveredCheckbox = document.getElementById('useDiscovered');
+
+        // Progress bar
+        this.progressContainer = document.getElementById('progressContainer');
+        this.progressLabel = document.getElementById('progressLabel');
+        this.progressPercentage = document.getElementById('progressPercentage');
+        this.progressBarFill = document.getElementById('progressBarFill');
+        this.progressCurrent = document.getElementById('progressCurrent');
+        this.progressTotal = document.getElementById('progressTotal');
 
         // Status elements
         this.scanStatus = document.getElementById('scanStatus');
@@ -41,6 +72,13 @@ class ArbitrageApp {
         this.scanBtn.addEventListener('click', () => this.startScan());
         this.refreshBtn.addEventListener('click', () => this.refreshOpportunities());
 
+        // Theme toggle
+        this.themeToggle.addEventListener('click', (e) => {
+            if (e.target.classList.contains('theme-toggle-btn')) {
+                this.switchTheme(e.target.dataset.theme);
+            }
+        });
+
         this.closeModal.addEventListener('click', () => {
             this.modal.style.display = 'none';
         });
@@ -48,6 +86,21 @@ class ArbitrageApp {
         window.addEventListener('click', (event) => {
             if (event.target === this.modal) {
                 this.modal.style.display = 'none';
+            }
+        });
+    }
+
+    switchTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+
+        // Update button states
+        const themeButtons = this.themeToggle.querySelectorAll('.theme-toggle-btn');
+        themeButtons.forEach(btn => {
+            if (btn.dataset.theme === theme) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
             }
         });
     }
@@ -60,36 +113,92 @@ class ArbitrageApp {
     async discoverMarkets() {
         this.setButtonLoading(this.discoverBtn, true);
         this.updateStatusText('Discovering markets...');
+        this.showProgress('Starting discovery...', 0, 100);
 
         try {
+            const maxMarkets = parseInt(this.marketLimitSelect.value);
+
+            // Start discovery
             const response = await fetch('/api/discover', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
+                body: JSON.stringify({
+                    max_markets: maxMarkets
+                })
             });
 
             const data = await response.json();
 
             if (data.success) {
-                this.showNotification(`✓ Discovered ${data.pairs_found} market pairs!`, 'success');
-                this.updateStatusText('Discovery complete');
-                this.renderDiscoveredPairs(data.pairs || []);
+                // Poll for progress
+                await this.pollForDiscoveryProgress();
             } else {
                 this.showNotification(`Error: ${data.error}`, 'error');
                 this.updateStatusText('Discovery failed');
+                this.setButtonLoading(this.discoverBtn, false);
+                this.hideProgress();
             }
         } catch (error) {
             this.showNotification(`Error: ${error.message}`, 'error');
             this.updateStatusText('Discovery failed');
-        } finally {
             this.setButtonLoading(this.discoverBtn, false);
+            this.hideProgress();
         }
+    }
+
+    async pollForDiscoveryProgress() {
+        const pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/progress');
+                const progress = await response.json();
+
+                if (progress.active) {
+                    // Update progress bar
+                    this.showProgress(
+                        progress.label || 'Processing...',
+                        progress.current,
+                        progress.total
+                    );
+                } else {
+                    // Discovery complete
+                    clearInterval(pollInterval);
+                    this.setButtonLoading(this.discoverBtn, false);
+                    this.hideProgress();
+
+                    // Reload discovered pairs
+                    try {
+                        const pairsResponse = await fetch('/static/discovered_markets.json');
+                        const pairsData = await pairsResponse.json();
+
+                        // Convert to array format
+                        const pairsArray = Object.entries(pairsData).map(([key, value]) => ({
+                            poly_title: value.poly_title || key,
+                            kalshi_title: value.kalshi_title || '',
+                            similarity_score: value.similarity_score || 0
+                        }));
+
+                        this.renderDiscoveredPairs(pairsArray);
+                        this.showNotification(`Discovered ${pairsArray.length} market pairs`, 'success');
+                        this.updateStatusText('Discovery complete');
+                    } catch (e) {
+                        this.showNotification('Discovery complete', 'success');
+                        this.updateStatusText('Discovery complete');
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling progress:', error);
+                clearInterval(pollInterval);
+                this.setButtonLoading(this.discoverBtn, false);
+                this.hideProgress();
+            }
+        }, 500); // Poll every 500ms for smooth updates
     }
 
     async startScan() {
         this.setButtonLoading(this.scanBtn, true);
         this.scanning = true;
         this.updateStatusText('Scanning...');
+        this.showProgress('Scanning for arbitrage opportunities...', 0, 0);
 
         try {
             const response = await fetch('/api/scan', {
@@ -111,11 +220,13 @@ class ArbitrageApp {
                 this.showNotification(`Error: ${data.error}`, 'error');
                 this.scanning = false;
                 this.setButtonLoading(this.scanBtn, false);
+                this.hideProgress();
             }
         } catch (error) {
             this.showNotification(`Error: ${error.message}`, 'error');
             this.scanning = false;
             this.setButtonLoading(this.scanBtn, false);
+            this.hideProgress();
         }
     }
 
@@ -124,10 +235,17 @@ class ArbitrageApp {
             await this.updateStatus();
             await this.refreshOpportunities();
 
+            // Update progress bar based on status
+            if (this.scanning) {
+                const total = this.totalMarkets.textContent || '0';
+                this.updateProgress(parseInt(total), parseInt(total) + 10); // Approximate
+            }
+
             // Stop polling when scan is complete
             if (!this.scanning) {
                 clearInterval(pollInterval);
                 this.setButtonLoading(this.scanBtn, false);
+                this.hideProgress();
             }
         }, 2000);
     }
@@ -264,7 +382,7 @@ class ArbitrageApp {
             <h2>${opp.market_name}</h2>
 
             <div class="detail-section">
-                <h3>📊 Overview</h3>
+                <h3>Overview</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="label">Strategy</div>
@@ -288,7 +406,7 @@ class ArbitrageApp {
             </div>
 
             <div class="detail-section">
-                <h3>💰 Polymarket Position</h3>
+                <h3>Polymarket Position</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="label">Side</div>
@@ -314,7 +432,7 @@ class ArbitrageApp {
             </div>
 
             <div class="detail-section">
-                <h3>📈 Kalshi Position</h3>
+                <h3>Kalshi Position</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="label">Side</div>
@@ -340,7 +458,7 @@ class ArbitrageApp {
             </div>
 
             <div class="detail-section">
-                <h3>🎯 Expected Outcomes</h3>
+                <h3>Expected Outcomes</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="label">Profit if YES</div>
@@ -359,7 +477,7 @@ class ArbitrageApp {
 
             ${opp.roi_percent >= 1 ? `
                 <div class="order-instructions">
-                    <h4>📋 Manual Execution Instructions</h4>
+                    <h4>Manual Execution Instructions</h4>
                     <div class="order-step">
                         <strong>Step 1: Polymarket</strong><br>
                         → Buy ${opp.poly_quantity} ${opp.poly_side} contracts<br>
@@ -373,7 +491,7 @@ class ArbitrageApp {
                         → Expected cost: $${opp.kalshi_cost.toFixed(2)} + $${opp.kalshi_fee.toFixed(2)} fee
                     </div>
                     <div class="order-step" style="background: rgba(239, 68, 68, 0.1); border-left: 3px solid var(--danger);">
-                        <strong>⚠️ Critical Safety Rules:</strong><br>
+                        <strong>Critical Safety Rules:</strong><br>
                         • Use LIMIT orders only (never market orders)<br>
                         • Place both orders as quickly as possible<br>
                         • If only one fills, CANCEL the other immediately<br>
@@ -424,6 +542,37 @@ class ArbitrageApp {
 
     truncate(str, maxLen) {
         return str.length > maxLen ? str.substring(0, maxLen) + '...' : str;
+    }
+
+    showProgress(label, current, total) {
+        this.progressContainer.style.display = 'block';
+        this.progressLabel.textContent = label;
+        this.progressCurrent.textContent = current;
+        this.progressTotal.textContent = total;
+
+        if (total > 0) {
+            const percentage = Math.round((current / total) * 100);
+            this.progressPercentage.textContent = `${percentage}%`;
+            this.progressBarFill.style.width = `${percentage}%`;
+        } else {
+            this.progressPercentage.textContent = '0%';
+            this.progressBarFill.style.width = '0%';
+        }
+    }
+
+    hideProgress() {
+        this.progressContainer.style.display = 'none';
+    }
+
+    updateProgress(current, total) {
+        this.progressCurrent.textContent = current;
+        this.progressTotal.textContent = total;
+
+        if (total > 0) {
+            const percentage = Math.round((current / total) * 100);
+            this.progressPercentage.textContent = `${percentage}%`;
+            this.progressBarFill.style.width = `${percentage}%`;
+        }
     }
 }
 

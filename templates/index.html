@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,55 +7,98 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>🎯 Arbitrage Advisor</h1>
-            <p class="subtitle">Polymarket vs. Kalshi · Risk-Neutral Synthetic Arbitrage</p>
-        </header>
+    <!-- Header with Theme Toggle -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <div class="logo-container">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                    <div class="header-title">
+                        <h1>Arbitrage Advisor</h1>
+                        <p>Polymarket vs. Kalshi · Risk-Neutral Synthetic Arbitrage</p>
+                    </div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="theme-toggle" id="themeToggle">
+                    <button class="theme-toggle-btn active" data-theme="light">Light</button>
+                    <button class="theme-toggle-btn" data-theme="dark">Dark</button>
+                </div>
+            </div>
+        </div>
+    </header>
 
+    <div class="container">
         <!-- Control Panel -->
         <div class="control-panel">
             <div class="controls">
                 <button id="discoverBtn" class="btn btn-primary">
-                    🔍 Auto-Discover Markets
+                    <span class="btn-text">Auto-Discover Markets</span>
                 </button>
                 <button id="scanBtn" class="btn btn-success">
-                    📊 Scan for Arbitrage
+                    <span class="btn-text">Scan for Arbitrage</span>
                 </button>
-                <button id="refreshBtn" class="btn btn-secondary">
-                    🔄 Refresh
+                <button id="refreshBtn" class="btn">
+                    <span class="btn-text">Refresh</span>
                 </button>
             </div>
 
             <div class="settings">
                 <label>
-                    Budget: $
-                    <input type="number" id="budgetInput" value="1000" min="100" max="100000" step="100">
+                    <span>Budget:</span>
+                    <div class="input-wrapper">
+                        <span class="input-prefix">$</span>
+                        <input type="number" id="budgetInput" value="1000" min="100" max="100000" step="100">
+                    </div>
                 </label>
                 <label>
-                    <input type="checkbox" id="useDiscovered" checked>
-                    Use Auto-Discovered Markets
+                    <span>Markets to Scan:</span>
+                    <select id="marketLimitSelect" class="select-input">
+                        <option value="500">500 markets</option>
+                        <option value="1000">1,000 markets</option>
+                        <option value="2000">2,000 markets</option>
+                        <option value="5000">5,000 markets</option>
+                    </select>
                 </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="useDiscovered" checked>
+                    <span>Use Auto-Discovered Markets</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Loading Progress Bar -->
+        <div class="progress-container" id="progressContainer" style="display: none;">
+            <div class="progress-header">
+                <span class="progress-label" id="progressLabel">Loading...</span>
+                <span class="progress-percentage" id="progressPercentage">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-bar-fill" id="progressBarFill"></div>
+            </div>
+            <div class="progress-details" id="progressDetails">
+                <span id="progressCurrent">0</span> / <span id="progressTotal">0</span> markets processed
             </div>
         </div>
 
         <!-- Status Bar -->
         <div class="status-bar" id="statusBar">
             <div class="status-item">
-                <span class="label">Status:</span>
+                <span class="label">Status</span>
                 <span id="scanStatus" class="value">Ready</span>
             </div>
             <div class="status-item">
-                <span class="label">Last Update:</span>
+                <span class="label">Last Update</span>
                 <span id="lastUpdate" class="value">Never</span>
             </div>
             <div class="status-item">
-                <span class="label">Markets:</span>
+                <span class="label">Markets Scanned</span>
                 <span id="totalMarkets" class="value">0</span>
             </div>
             <div class="status-item">
-                <span class="label">Profitable:</span>
+                <span class="label">Profitable Opportunities</span>
                 <span id="profitableCount" class="value success">0</span>
             </div>
         </div>
@@ -79,11 +122,11 @@
                             <th>#</th>
                             <th>Market</th>
                             <th>Strategy</th>
-                            <th>ROI %</th>
+                            <th>ROI</th>
                             <th>Profit</th>
-                            <th>Capital</th>
-                            <th>Poly Side</th>
-                            <th>Kalshi Side</th>
+                            <th>Capital Required</th>
+                            <th>Polymarket Position</th>
+                            <th>Kalshi Position</th>
                             <th>Action</th>
                         </tr>
                     </thead>
