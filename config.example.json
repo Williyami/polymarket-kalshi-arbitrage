@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy to config.json and fill in. config.json is gitignored; keep it that way.",
+
+  "polymarket": {
+    "api_key": "",
+    "private_key": ""
+  },
+
+  "kalshi": {
+    "email": "",
+    "password": ""
+  },
+
+  "_notes": {
+    "polymarket_private_key": "Wallet key used for signing. Treat as irrecoverable if leaked — anyone holding it controls the funds in that wallet. Prefer a dedicated wallet holding only what you intend to trade.",
+    "kalshi_password": "Account credentials, not an API token. If Kalshi offers scoped API keys, prefer those over storing the login.",
+    "dry_run": "See issue #5 — verify which mode the advisor runs in before supplying real credentials."
+  }
+}
